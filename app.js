@@ -19,7 +19,7 @@
  * @param  {int} max      The max value a number may be
  * @return {array}  The array with numbers
  */
-var getXRandomNumbersBeneathMax = function(numItems, max) {
+function getXRandomNumbersBeneathMax(numItems, max) {
   var toReturn = [];
   while(toReturn.length < numItems){
     var randomnumber = Math.ceil(Math.random() * max);
@@ -35,22 +35,24 @@ var getXRandomNumbersBeneathMax = function(numItems, max) {
     }
   }
   return toReturn;
-};
-
+}
 
 /**
- * Convert a set of GeoJSON coordinates to an set of coordinates usable in Google Maps
+ * Convert GeoJSON geometry to coordinates usable in Google Maps
  * @param  {string} geometryType  The Geometry Type. Polygon or MultiPolygon
  * @param  {json} geoJSONCoords The coordindates in GeoJSON format
  * @return {array} The coordinates in a format usable by Google Maps
  */
-function geoJSONCoords2GMapsCoords(geometryType, geoJSONCoords) {
+function geoJSONgeometry2GMapsCoords(geometry) {
+  var geometryType = geometry.type;
+  var geoJSONCoords = geometry.coordinates;
   var paths = [];
   $.each(geoJSONCoords, function (k, coords) {
     var shapeCoords = [];
     coords = geometryType == 'Polygon' ? coords : coords[0];
     $.each(coords, function(j, coord) {
-      !isNaN(coord[0]) && !isNaN(coord[1]) && shapeCoords.push(new google.maps.LatLng(coord[1], coord[0]));
+      if (isNaN(coord[0]) || isNaN(coord[1])) return;
+      shapeCoords.push(new google.maps.LatLng(coord[1], coord[0]));
     });
     paths.push(shapeCoords);
   });
@@ -130,9 +132,9 @@ window.addEventListener('load', function(e) {
 
   // Load in all countries
   $.ajax({
-    url : 'data/countries.geo.json',
-    dataFormat : 'json'
-  }).success(function(data){
+    url: 'data/countries.geo.json',
+    dataFormat: 'json'
+  }).success(function(data) {
 
     // Get 15 random indexes. We'll show these 15 on screen.
     var countriesToShow = getXRandomNumbersBeneathMax(15, data.features.length);
@@ -145,7 +147,7 @@ window.addEventListener('load', function(e) {
 
       // Create a polygon of our country
       var poly = new google.maps.Polygon({
-        paths: geoJSONCoords2GMapsCoords(item.geometry.type, item.geometry.coordinates),
+        paths: geoJSONgeometry2GMapsCoords(item.geometry),
         strokeColor: '#FF0000',
         strokeOpacity: 1,
         strokeWeight: 1,
@@ -156,14 +158,17 @@ window.addEventListener('load', function(e) {
         countryName: item.properties.name,
         // I know, we recalc this here,
         // but that's because we want a copy/clone of the paths:
-        countryPaths: geoJSONCoords2GMapsCoords(item.geometry.type, item.geometry.coordinates),
+        countryPaths: geoJSONgeometry2GMapsCoords(item.geometry),
         draggable: true,
         geodesic: true,
         zIndex: 2
       });
 
       // define targetBounds in which the shape should end up being placed in
-      var targetBounds = poly.getBounds().expand(((google.maps.geometry.spherical.computeArea(poly.getPath())/1000000000 < 20) ? 10 : 5));
+      var targetBounds = poly.getBounds().expand(
+        google.maps.geometry.spherical.computeArea(poly.getPath()) / 1e9 < 20
+        ? 10 : 5
+      );
 
       // Move the polygon to some random place on the map
       poly.moveTo(new google.maps.LatLng(Math.random() * 100 - 50, Math.random() * 300 - 150)).setMap(map);
