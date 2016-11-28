@@ -13,6 +13,8 @@
  * https://github.com/bramus/google-maps-polygon-moveto
  */
 
+var maxCountries = parseInt(location.hash.slice(1) || '', 10) || 15;
+
 /**
  * Get X random number beneath an upper limit
  * @param  {int} numItems The number of numbers you want generated
@@ -47,10 +49,10 @@ function geoJSONgeometry2GMapsCoords(geometry) {
   var geometryType = geometry.type;
   var geoJSONCoords = geometry.coordinates;
   var paths = [];
-  $.each(geoJSONCoords, function (k, coords) {
+  geoJSONCoords.forEach(function(coords) {
     var shapeCoords = [];
     coords = geometryType == 'Polygon' ? coords : coords[0];
-    $.each(coords, function(j, coord) {
+    coords.forEach(function(coord) {
       if (isNaN(coord[0]) || isNaN(coord[1])) return;
       shapeCoords.push(new google.maps.LatLng(coord[1], coord[0]));
     });
@@ -130,91 +132,84 @@ window.addEventListener('load', function(e) {
   );
   map.setMapTypeId('gowalla');
 
-  // Load in all countries
-  $.ajax({
-    url: 'data/countries.geo.json',
-    dataFormat: 'json'
-  }).success(function(data) {
+  // Get 15 random indexes. We'll show these 15 on screen.
+  var countriesToShow = getXRandomNumbersBeneathMax(maxCountries, countries.features.length);
+  var totalScore = 0;
 
-    // Get 15 random indexes. We'll show these 15 on screen.
-    var countriesToShow = getXRandomNumbersBeneathMax(15, data.features.length);
-    var totalScore = 0;
+  countries.features.forEach(function(item, i) {
 
-    $.each(data.features, function(i, item) {
+    // Don't show it if it's not one of our selected
+    if (countriesToShow.indexOf(i) < 0) return;
 
-      // Don't show it if it's not one of our 15 selected
-      if (countriesToShow.indexOf(i) < 0) return;
+    // Create a polygon of our country
+    var poly = new google.maps.Polygon({
+      paths: geoJSONgeometry2GMapsCoords(item.geometry),
+      strokeColor: '#FF0000',
+      strokeOpacity: 1,
+      strokeWeight: 1,
+      fillColor: '#FF0000',
+      fillOpacity: 0.4,
+      countryCode: item.id,
+      countryNum: i,
+      countryName: item.properties.name,
+      // I know, we recalc this here,
+      // but that's because we want a copy/clone of the paths:
+      countryPaths: geoJSONgeometry2GMapsCoords(item.geometry),
+      draggable: true,
+      geodesic: true,
+      zIndex: 2
+    });
 
-      // Create a polygon of our country
-      var poly = new google.maps.Polygon({
-        paths: geoJSONgeometry2GMapsCoords(item.geometry),
-        strokeColor: '#FF0000',
-        strokeOpacity: 1,
-        strokeWeight: 1,
-        fillColor: '#FF0000',
-        fillOpacity: 0.4,
-        countryCode: item.id,
-        countryNum: i,
-        countryName: item.properties.name,
-        // I know, we recalc this here,
-        // but that's because we want a copy/clone of the paths:
-        countryPaths: geoJSONgeometry2GMapsCoords(item.geometry),
-        draggable: true,
-        geodesic: true,
-        zIndex: 2
-      });
+    // define targetBounds in which the shape should end up being placed in
+    var targetBounds = poly.getBounds().expand(
+      google.maps.geometry.spherical.computeArea(poly.getPath()) / 1e9 < 20
+      ? 10 : 5
+    );
 
-      // define targetBounds in which the shape should end up being placed in
-      var targetBounds = poly.getBounds().expand(
-        google.maps.geometry.spherical.computeArea(poly.getPath()) / 1e9 < 20
-        ? 10 : 5
-      );
+    // Move the polygon to some random place on the map
+    poly.moveTo(new google.maps.LatLng(Math.random() * 100 - 50, Math.random() * 300 - 150)).setMap(map);
 
-      // Move the polygon to some random place on the map
-      poly.moveTo(new google.maps.LatLng(Math.random() * 100 - 50, Math.random() * 300 - 150)).setMap(map);
+    // Show the polygon on the map
+    poly.setMap(map);
 
-      // Show the polygon on the map
-      poly.setMap(map);
-
-      // When we've dragged around our polygon(s), check if it's aligned right
-      google.maps.event.addListener(poly, 'dblclick', function(e) {
-        if (this.draggable) placeCountry(this, false);
-      });
-      google.maps.event.addListener(poly, 'dragend', function(e) {
-        if (targetBounds.containsPath(this.getPaths())) {
-          placeCountry(this, true);
-        }
-      });
-
-      function placeCountry(poly, incrementScore) {
-        // Update the poly
-        var color = (incrementScore) ? '#00FF00' : '#0000FF';
-        poly.setOptions({
-          paths: poly.countryPaths,
-          strokeColor: color,
-          fillColor: color,
-          draggable: false,
-          zIndex: 1
-        });
-
-        // Give feedback to the user
-        var message;
-        if (!incrementScore) {
-          message = 'Alas, that was ' + poly.countryName;
-        } else {
-          message = 'Nice! That is ' + poly.countryName + ' indeed.';
-          totalScore++;
-        }
-
-        // Adjust countriesToShow + end game if needed
-        countriesToShow.splice(countriesToShow.indexOf(poly.countryNum), 1);
-        if (countriesToShow.length == 0) {
-          message += ' // Game Finished! Hit refresh to start a new game!';
-        }
-
-        $('#message').html(message);
-        $('#score').html(totalScore + '/15');
+    // When we've dragged around our polygon(s), check if it's aligned right
+    google.maps.event.addListener(poly, 'dblclick', function(e) {
+      if (this.draggable) placeCountry(this, false);
+    });
+    google.maps.event.addListener(poly, 'dragend', function(e) {
+      if (targetBounds.containsPath(this.getPaths())) {
+        placeCountry(this, true);
       }
     });
+
+    function placeCountry(poly, incrementScore) {
+      // Update the poly
+      var color = (incrementScore) ? '#00FF00' : '#0000FF';
+      poly.setOptions({
+        paths: poly.countryPaths,
+        strokeColor: color,
+        fillColor: color,
+        draggable: false,
+        zIndex: 1
+      });
+
+      // Give feedback to the user
+      var message;
+      if (!incrementScore) {
+        message = 'Alas, that was ' + poly.countryName;
+      } else {
+        message = 'Nice! That is ' + poly.countryName + ' indeed.';
+        totalScore++;
+      }
+
+      // Adjust countriesToShow + end game if needed
+      countriesToShow.splice(countriesToShow.indexOf(poly.countryNum), 1);
+      if (countriesToShow.length == 0) {
+        message += ' // Game Finished! Hit refresh to start a new game!';
+      }
+
+      document.getElementById('message').textContent = message;
+      document.getElementById('score').textContent = totalScore + '/' + maxCountries;
+    }
   });
 });
